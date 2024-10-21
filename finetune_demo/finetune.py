@@ -12,7 +12,7 @@ import torch
 import typer
 from datasets import Dataset, Split
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-from peft import PeftConfig, get_peft_config, get_peft_model
+from peft import PeftConfig, get_peft_config, get_peft_model, prepare_model_for_kbit_training
 from rouge_chinese import Rouge
 from torch import nn
 from transformers import (
@@ -22,6 +22,7 @@ from transformers import (
     GenerationConfig,
     PreTrainedTokenizer,
     Seq2SeqTrainingArguments,
+    BitsAndBytesConfig
 )
 from transformers import DataCollatorForSeq2Seq as _DataCollatorForSeq2Seq
 from transformers import Seq2SeqTrainer as _Seq2SeqTrainer
@@ -350,13 +351,21 @@ def load_tokenizer_and_model(
 ):
     tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
     if peft_config is not None:
+        quant_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type='nf4',
+        )
         model = AutoModelForCausalLM.from_pretrained(
             model_dir,
             trust_remote_code=True,
             empty_init=False,
             use_cache=False,
+            quantization_config=quant_config,            
             torch_dtype=torch.bfloat16  # Must use BFloat 16
         )
+        model = prepare_model_for_kbit_training(model)
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
     else:
